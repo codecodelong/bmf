@@ -829,6 +829,8 @@ int CFFDecoder::init_input(AVDictionary *options) {
     }
     ts_offset_ = copy_ts_ ? 0 : -timestamp;
 
+    //zhzh
+    callback_decode_info_ = true;
     if (codec_context(&video_stream_index_, &video_decode_ctx_, input_fmt_ctx_,
                       AVMEDIA_TYPE_VIDEO) >= 0) {
         video_stream_ = input_fmt_ctx_->streams[video_stream_index_];
@@ -2413,6 +2415,33 @@ int CFFDecoder::process(Task &task) {
         audio_end_ = true;
     }
 
+    //zhzh
+    if (callback_endpoint_ && callback_decode_info_)
+    {
+        callback_decode_info_ = false;
+        nlohmann::json info;
+        if (video_stream_)
+        {
+            AVRational framerate = av_guess_frame_rate(input_fmt_ctx_, video_stream_, NULL);
+            info["videoInfo"]["codecType"] = avcodec_get_name(video_stream_->codecpar->codec_id);
+            //info["videoInfo"]["profile"] = avcodec_profile_name(video_stream_->codecpar->codec_id, video_stream_->codecpar->profile);
+            info["videoInfo"]["frameRate"] = framerate.num;
+            info["videoInfo"]["width"] = video_stream_->codecpar->width;
+            info["videoInfo"]["height"] = video_stream_->codecpar->height;
+        }
+        if (audio_stream_)
+        {
+            info["audioInfo"]["codecType"] = avcodec_get_name(audio_stream_->codecpar->codec_id);
+            info["audioInfo"]["sampleRate"] = audio_stream_->codecpar->sample_rate;
+            info["audioInfo"]["channels"] = audio_stream_->codecpar->channels;
+            info["audioInfo"]["profile"] = audio_stream_->codecpar->profile;
+            info["audioInfo"]["level"] = audio_stream_->codecpar->level;
+        }
+        std::string str_info = info.dump();
+        auto para = CBytes::make((uint8_t*)str_info.c_str(), str_info.size());
+        callback_endpoint_(0, para);
+    }
+
     AVPacket pkt;
     push_data_flag_ = false;
     while (!(video_end_ && audio_end_)) {
@@ -2453,6 +2482,12 @@ int CFFDecoder::process(Task &task) {
     if (task_done_)
         task.set_timestamp(DONE);
     return PROCESS_OK;
+}
+
+//zhzh
+void CFFDecoder::set_callback(std::function<CBytes(int64_t, CBytes)> callback_endpoint)
+{
+    callback_endpoint_ = callback_endpoint;
 }
 
 REGISTER_MODULE_CLASS(CFFDecoder)

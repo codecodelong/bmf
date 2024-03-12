@@ -132,6 +132,10 @@ class CFFDecoder : public Module {
     AVDictionary *dec_opts_ = NULL;
     bool copy_ts_ = false;
 
+    //zhzh
+    std::function<CBytes(int64_t, CBytes)> callback_endpoint_ = nullptr;
+    bool callback_decode_info_ = true;
+
     // use when input is bmf_avpacket
     bool packets_handle_all_ = false;
     bool valid_packet_flag_ = false;
@@ -234,6 +238,9 @@ class CFFDecoder : public Module {
     int read_packet(uint8_t *buf, int buf_size);
 
     int pkt_ts(AVPacket *pkt, int index);
+
+    //zhzh
+    void set_callback(std::function<CBytes(int64_t, CBytes)> callback_endpoint) override;
 };
 /** @page ModuleDecoder Build-in Decode Module
  * @ingroup DecM

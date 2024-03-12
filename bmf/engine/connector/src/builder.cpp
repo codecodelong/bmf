@@ -133,11 +133,10 @@ nlohmann::json RealNode::NodeMetaInfo::Dump() {
     nlohmann::json info;
 
     info["premodule_id"] = preModuleUID_;
-    info["callback_bindings"] = nlohmann::json::object();
+    info["callback_binding"] = nlohmann::json(std::vector<std::string>());
     for (auto &kv : callbackBinding_) {
-        info["callback_bindings"][kv.first] = kv.second;
+        info["callback_binding"].push_back(std::to_string(kv.first) + ":" + std::to_string(kv.second));
     }
-
     return info;
 }
 
