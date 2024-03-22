@@ -77,7 +77,8 @@ fi
 
 if [ ! -d "3rd_party/breakpad" ]
 then
-    (cd 3rd_party/ && wget https://github.com/BabitMF/bmf/releases/download/files/breakpad.tar.xz && tar xvf breakpad.tar.xz)
+    #(cd 3rd_party/ && wget https://github.com/BabitMF/bmf/releases/download/files/breakpad.tar.xz && tar xvf breakpad.tar.xz)
+    cd 3rd_party/ && tar xvf breakpad.tar.xz
 fi
 
 # Generate BMF version

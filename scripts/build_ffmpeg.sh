@@ -67,8 +67,10 @@ function build_yasm_unix() {
 
 function build_x264_unix() {
     cd $1
-    git clone --branch stable --depth 1 https://code.videolan.org/videolan/x264.git
-    cd x264
+    #git clone --branch stable --depth 1 https://code.videolan.org/videolan/x264.git
+    #cd x264
+    cp -r ../3rd_party/x264 $1/
+    cd $1/x264
     ./configure --enable-shared
     make -j $2
     make install
@@ -76,8 +78,10 @@ function build_x264_unix() {
 
 function build_x265_unix() {
     cd $1
-    git clone --branch stable --depth 2 https://bitbucket.org/multicoreware/x265_git
-    cd $1/x265_git/build/linux
+    #git clone --branch stable --depth 2 https://bitbucket.org/multicoreware/x265_git
+    #cd $1/x265_git/build/linux
+    cp -r ../3rd_party/x265 $1/
+    cd $1/x265/build/linux
     cmake -G "Unix Makefiles" -DENABLE_SHARED:bool=off ../../source
     make -j $2
     make install
