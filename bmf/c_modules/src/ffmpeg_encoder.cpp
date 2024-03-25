@@ -555,6 +555,32 @@ int CFFEncoder::handle_output(AVPacket *hpkt, int idx) {
         av_packet_rescale_ts(pkt, enc_ctxs_[idx]->time_base,
                              output_stream_[idx]->time_base);
 
+    // add by zwl begin for support fill packet to out_streams
+    if(push_output_ == OutputMode::OUTPUT_NOTHING &&
+        current_task_ptr_->get_outputs().size() > 0){
+        if (first_packet_[idx]) {
+            auto stream = std::make_shared<AVStream>();
+            *stream = *(output_stream_[idx]);
+            stream->codecpar = avcodec_parameters_alloc();
+            avcodec_parameters_copy(stream->codecpar, output_stream_[idx]->codecpar);
+            auto packet = Packet(stream);
+            if (current_task_ptr_->get_outputs().find(idx) !=
+                current_task_ptr_->get_outputs().end()){
+                current_task_ptr_->get_outputs()[idx]->push(packet);
+            }
+            first_packet_[idx] = false;
+        }
+
+        BMFAVPacket packet_tmp = ffmpeg::to_bmf_av_packet(pkt, true);
+        auto packet = Packet(packet_tmp);
+        packet.set_timestamp(pkt->pts * av_q2d(output_stream_[idx]->time_base) * 1000000);
+        if (current_task_ptr_->get_outputs().find(idx) !=
+            current_task_ptr_->get_outputs().end()){
+            current_task_ptr_->get_outputs()[idx]->push(packet);
+        }   
+    }
+    // add by zwl end for support fill packet to out_streams
+
     ret = av_interleaved_write_frame(output_fmt_ctx_, pkt);
     if (ret < 0)
         BMFLOG_NODE(BMF_ERROR, node_id_) << "Interleaved write error";
@@ -669,7 +695,6 @@ int CFFEncoder::encode_and_write(AVFrame *frame, unsigned int idx,
             av_packet_free(&enc_pkt);
             return *got_packet;
         }
-
         if (push_output_ == OutputMode::OUTPUT_UNMUX_PACKET) {
             if (first_packet_[idx]) {
                 auto stream = std::make_shared<AVStream>();
@@ -704,7 +729,6 @@ int CFFEncoder::encode_and_write(AVFrame *frame, unsigned int idx,
             }
             if (ret = flush_cache(); ret < 0)
                 return ret;
-
             ret = handle_output(enc_pkt, idx);
             if (ret != 0) {
                 av_packet_free(&enc_pkt);
@@ -957,7 +981,10 @@ int CFFEncoder::init_codec(int idx, AVFrame *frame) {
 
         ret = avcodec_parameters_to_context(enc_ctxs_[idx],
                                             input_stream->codecpar);
-        avcodec_parameters_free(&input_stream->codecpar);
+        // edit by zwl begin
+        //avcodec_parameters_free(&input_stream->codecpar);
+        // edit by zwl end
+        
         // if (ret >= 0)
         //    ret = av_opt_set_dict(enc_ctxs_[idx], &ost_[idx].encoder_opts);
         if (ret < 0) {

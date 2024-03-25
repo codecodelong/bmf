@@ -2426,6 +2426,8 @@ int CFFDecoder::process(Task &task) {
             info["videoInfo"]["codecType"] = avcodec_get_name(video_stream_->codecpar->codec_id);
             //info["videoInfo"]["profile"] = avcodec_profile_name(video_stream_->codecpar->codec_id, video_stream_->codecpar->profile);
             info["videoInfo"]["frameRate"] = framerate.num;
+            info["videoInfo"]["url"] = input_path_;
+            info["videoInfo"]["bitRate"] = video_decode_ctx_->bit_rate;
             info["videoInfo"]["width"] = video_stream_->codecpar->width;
             info["videoInfo"]["height"] = video_stream_->codecpar->height;
         }
@@ -2433,6 +2435,8 @@ int CFFDecoder::process(Task &task) {
         {
             info["audioInfo"]["codecType"] = avcodec_get_name(audio_stream_->codecpar->codec_id);
             info["audioInfo"]["sampleRate"] = audio_stream_->codecpar->sample_rate;
+            info["audioInfo"]["url"] = input_path_;
+            info["audioInfo"]["bitRate"] = audio_decode_ctx_->bit_rate;
             info["audioInfo"]["channels"] = audio_stream_->codecpar->channels;
             info["audioInfo"]["profile"] = audio_stream_->codecpar->profile;
             info["audioInfo"]["level"] = audio_stream_->codecpar->level;
