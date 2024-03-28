@@ -135,7 +135,8 @@ class CFFDecoder : public Module {
     //zhzh
     std::function<CBytes(int64_t, CBytes)> callback_endpoint_ = nullptr;
     bool callback_decode_info_ = true;
-
+    int loop_ = 0;
+    
     // use when input is bmf_avpacket
     bool packets_handle_all_ = false;
     bool valid_packet_flag_ = false;
@@ -200,6 +201,8 @@ class CFFDecoder : public Module {
     int process_task_output_packet(int index, Packet &packet);
     int64_t get_start_time();
     int extract_frames(AVFrame *frame, std::vector<AVFrame *> &output_frames);
+
+    void seek_to_start();
 
 #ifdef BMF_USE_MEDIACODEC
     int init_android_vm();

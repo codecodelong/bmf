@@ -416,6 +416,9 @@ CFFDecoder::CFFDecoder(int node_id, JsonParam option) {
         if (option.has_key("delay_init_input")) {
             option.get_int("delay_init_input", delay_init);
         }
+        if (option.has_key("loop")) {
+            option.get_int("loop", loop_);
+        }
         if (!delay_init && !init_done_) {
             init_input(opts);
         }
@@ -2456,6 +2459,12 @@ int CFFDecoder::process(Task &task) {
             continue;
         }
         if (ret < 0) {
+            //zhzh
+            if (loop_)
+            {
+                seek_to_start();
+                break;
+            }
             flush(task);
             if (file_list_.size() == 0) {
                 task.set_timestamp(DONE);
@@ -2472,6 +2481,12 @@ int CFFDecoder::process(Task &task) {
         }
         av_packet_unref(&pkt);
         if (ret == AVERROR_EOF || (video_end_ && audio_end_)) {
+            //zhzh
+            if (loop_)
+            {
+                seek_to_start();
+                break;
+            }
             flush(task);
             if (file_list_.size() == 0) {
                 task.set_timestamp(DONE);
@@ -2492,6 +2507,36 @@ int CFFDecoder::process(Task &task) {
 void CFFDecoder::set_callback(std::function<CBytes(int64_t, CBytes)> callback_endpoint)
 {
     callback_endpoint_ = callback_endpoint;
+}
+
+void CFFDecoder::seek_to_start()
+{
+    int64_t timestamp = 0;
+    if (input_fmt_ctx_->start_time != AV_NOPTS_VALUE)
+        timestamp += input_fmt_ctx_->start_time;
+    int64_t seek_timestamp = timestamp;
+    if (!(input_fmt_ctx_->iformat->flags & AVFMT_SEEK_TO_PTS)) {
+        int dts_heuristic = 0;
+        for (int i = 0; i < input_fmt_ctx_->nb_streams; i++) {
+            const AVCodecParameters* par =
+                input_fmt_ctx_->streams[i]->codecpar;
+            if (par->video_delay) {
+                dts_heuristic = 1;
+                break;
+            }
+        }
+        if (dts_heuristic) {
+            seek_timestamp -= 3 * AV_TIME_BASE / 23;
+        }
+    }
+    int ret = avformat_seek_file(input_fmt_ctx_, -1, INT64_MIN, seek_timestamp, INT64_MAX, 0);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_WARNING,
+            "%s: could not seek to position %0.3f\n",
+            input_path_.c_str(), (double)timestamp / AV_TIME_BASE);
+    }
+    BMFLOG_NODE(BMF_INFO, node_id_) << "ts_offset_:" << ts_offset_ << ",last_ts_:" << last_ts_;
+    ts_offset_ = last_ts_;
 }
 
 REGISTER_MODULE_CLASS(CFFDecoder)
