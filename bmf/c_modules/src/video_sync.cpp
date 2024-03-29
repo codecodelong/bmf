@@ -110,7 +110,7 @@ int VideoSync::process_video_frame(AVFrame *frame,
         if (delta0 < 0 && delta > 0 && sync_method_ != VSYNC_PASSTHROUGH &&
             sync_method_ != VSYNC_DROP) {
             if (delta0 < -0.6) {
-                BMFLOG(BMF_INFO) << "Past duration" << -delta0 << " too large";
+                //BMFLOG(BMF_INFO) << "Past duration" << -delta0 << " too large";
             } else
                 BMFLOG(BMF_DEBUG)
                     << "Clipping frame in rate conversion by " << -delta0;

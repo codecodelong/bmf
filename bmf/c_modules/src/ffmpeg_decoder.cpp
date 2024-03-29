@@ -406,6 +406,19 @@ CFFDecoder::CFFDecoder(int node_id, JsonParam option) {
         option.get_string("pix_fmt", tmp);
         av_dict_set(&opts, "pixel_format", tmp.c_str(), 0);
     }
+
+    // add by zwl
+    /** @addtogroup DecM
+     * @{
+     * @arg rw_timeout: avformat_open_input or av_read_frame timeout, default: 5
+     * @} */
+    if (option.has_key("rw_timeout")) {
+        option.get_int("rw_timeout", rw_timeout_);
+    }else{
+        rw_timeout_ = 5;
+    }
+    rw_timeout_str_ = std::to_string(rw_timeout_ * 1000 * 1000);
+
     /** @addtogroup DecM
      * @{
      * @arg input_path: decode input file,exp. "1.mp4".
@@ -777,24 +790,63 @@ int CFFDecoder::get_rotate_desc(std::string &filter_desc) {
     return 0;
 }
 
+// add by zwl
+static int interrupt_callback(void *obj){
+    auto dec = (CFFDecoder *)obj;
+    if (dec == NULL) {
+        return 0;
+    }
+    return dec->decode_interrupt();
+}
+
+int CFFDecoder::decode_interrupt(){
+    int now =  time(NULL);
+    if (now - last_read_frame_time_ >= rw_timeout_) {
+        BMFLOG(BMF_WARNING) << input_path_ <<"interrupt nowtime=" << now 
+            << ", last_read_frame_time_=" << last_read_frame_time_;
+        return 1;
+    }
+    return 0;
+}
+
 int CFFDecoder::init_input(AVDictionary *options) {
     init_done_ = true;
     int ret;
 
+    // add by zwl begin
+    if(!input_fmt_ctx_){
+        input_fmt_ctx_ = avformat_alloc_context();
+        last_read_frame_time_ = time(NULL);
+        input_fmt_ctx_->interrupt_callback.callback = interrupt_callback;
+        input_fmt_ctx_->interrupt_callback.opaque = this;
+    }
+
     if (input_path_.empty()) {
         ret = avformat_open_input(&input_fmt_ctx_, NULL, NULL, &options);
         if (ret < 0) {
+            BMFLOG_NODE(BMF_WARNING, node_id_) << input_path_ << " avformat_open_input failed.";
             std::string msg = "avformat_open_input failed: " + error_msg(ret);
             BMF_Error(BMF_TranscodeError, msg.c_str());
         }
     } else {
+        /*
+        // add by zwl begin
+        if(input_path_.find("rtmp:") != std::string::npos){
+            av_dict_set(&options, "rw_timeout", rw_timeout_str_.c_str(), 0); //us
+        }else if(input_path_.find("http:") != std::string::npos || 
+            input_path_.find("https:") != std::string::npos ){
+            av_dict_set(&options, "timeout", rw_timeout_str_.c_str(), 0); // in us
+        }*/
+        // add by zwl end
         ret = avformat_open_input(&input_fmt_ctx_, input_path_.c_str(), NULL,
                                   &options);
         if (ret < 0) {
+            BMFLOG_NODE(BMF_WARNING, node_id_) << input_path_ << " avformat_open_input failed.";
             std::string msg = "avformat_open_input failed: " + error_msg(ret);
             BMF_Error(BMF_TranscodeError, msg.c_str());
         }
     }
+
     if ((ret = avformat_find_stream_info(input_fmt_ctx_, NULL)) < 0) {
         if (ret < 0) {
             std::string msg =
@@ -831,7 +883,6 @@ int CFFDecoder::init_input(AVDictionary *options) {
         }
     }
     ts_offset_ = copy_ts_ ? 0 : -timestamp;
-
     //zhzh
     callback_decode_info_ = true;
     if (codec_context(&video_stream_index_, &video_decode_ctx_, input_fmt_ctx_,
@@ -870,7 +921,6 @@ int CFFDecoder::init_input(AVDictionary *options) {
         BMF_Error(BMF_TranscodeError,
                   "Could not find audio or video stream in the input");
     }
-
     return 0;
 }
 
@@ -2065,8 +2115,10 @@ int CFFDecoder::start_decode(std::vector<int> input_index,
     int got_frame = 0;
     while (!(video_end_ && audio_end_)) {
         av_init_packet(&pkt);
-        ret = av_read_frame(input_fmt_ctx_, &pkt);
+        // add by zwl
+        last_read_frame_time_ = time(NULL);
 
+        ret = av_read_frame(input_fmt_ctx_, &pkt);
         if (ret < 0) {
             flush(task_);
             if (file_list_.size() == 0) {
@@ -2453,6 +2505,9 @@ int CFFDecoder::process(Task &task) {
     push_data_flag_ = false;
     while (!(video_end_ && audio_end_)) {
         av_init_packet(&pkt);
+        // add by zwl
+        last_read_frame_time_ = time(NULL);
+
         ret = av_read_frame(input_fmt_ctx_, &pkt);
         if (ret == AVERROR(EAGAIN)) {
             usleep(10000);

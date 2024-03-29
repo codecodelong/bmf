@@ -136,6 +136,10 @@ class CFFDecoder : public Module {
     std::function<CBytes(int64_t, CBytes)> callback_endpoint_ = nullptr;
     bool callback_decode_info_ = true;
     int loop_ = 0;
+    //zwl
+    int rw_timeout_ = 0;
+    std::string rw_timeout_str_;
+    int last_read_frame_time_ = 0;
     
     // use when input is bmf_avpacket
     bool packets_handle_all_ = false;
@@ -244,6 +248,8 @@ class CFFDecoder : public Module {
 
     //zhzh
     void set_callback(std::function<CBytes(int64_t, CBytes)> callback_endpoint) override;
+    //zwl
+    int decode_interrupt();
 };
 /** @page ModuleDecoder Build-in Decode Module
  * @ingroup DecM
