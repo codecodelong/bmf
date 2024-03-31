@@ -136,6 +136,10 @@ class CFFEncoder : public Module {
     bool first_packet_[2] = {true, true};
     CurrentImage2Buffer current_image_buffer_ = {0};
     bool copy_ts_ = false;
+    //add by zwl
+    int last_retry_time_ = 0;
+    int is_finished_ = false;
+    bool interleaved_write_err_ = false;
 
   public:
     CFFEncoder(int node_id, JsonParam option);
@@ -191,6 +195,10 @@ class CFFEncoder : public Module {
     bool need_output_video_filter_graph(AVFrame *frame);
 
     int streamcopy(AVPacket *ipkt, AVPacket *opkt, int idx);
+
+    // add by zwl to support disconnect and retry
+    void retry();
+    bool is_retrying();
 };
 
 /** @page ModuleEncoder Build-in Encode Module

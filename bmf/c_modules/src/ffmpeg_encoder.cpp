@@ -77,6 +77,9 @@ CFFEncoder::CFFEncoder(int node_id, JsonParam option) {
 
     srv_cnt_ = 0;
     init();
+    // add by zwl
+    last_retry_time_ = 0;
+    is_finished_ = false;
     return;
 }
 
@@ -121,6 +124,9 @@ int CFFEncoder::init() {
     ost_[0].filter_in_rescale_delta_last =
         ost_[1].filter_in_rescale_delta_last = AV_NOPTS_VALUE;
     ost_[0].max_frames = ost_[1].max_frames = INT64_MAX;
+
+    //add by zwl
+    interleaved_write_err_ = false;
 
     /** @addtogroup EncM
      * @{
@@ -329,7 +335,11 @@ int CFFEncoder::init() {
     return 0;
 }
 
-CFFEncoder::~CFFEncoder() { clean(); }
+CFFEncoder::~CFFEncoder() { 
+    // add by zwl
+    is_finished_ = true;
+    clean(); 
+}
 
 int CFFEncoder::clean() {
     if (!b_init_)
@@ -351,7 +361,7 @@ int CFFEncoder::clean() {
             avcodec_free_context(&enc_ctxs_[idx]);
             enc_ctxs_[idx] = NULL;
         }
-        if (ost_[idx].input_stream)
+        if (ost_[idx].input_stream && is_finished_)
             ost_[idx].input_stream = NULL;
     }
     if (push_output_ == OutputMode::OUTPUT_NOTHING && output_fmt_ctx_ &&
@@ -372,7 +382,9 @@ int CFFEncoder::clean() {
         swr_free(&swr_ctx_);
         swr_ctx_ = NULL;
     }
-
+    // add by zwl
+    stream_copy_cache_.clear();
+    frame_cache_.clear();
     return 0;
 }
 
@@ -388,6 +400,33 @@ int CFFEncoder::reset() {
     b_init_ = false;
     return 0;
 }
+
+// add by zwl to support disconnect and retry begin
+#define RETRY_TIME_INTERVAL 5
+void CFFEncoder::retry(){
+    int now_time = time(NULL);
+    if(now_time - last_retry_time_ < RETRY_TIME_INTERVAL){
+        return;
+    }
+    last_retry_time_ = time(NULL);
+    reset_flag_ = false;
+    clean();
+    video_sync_ = NULL;
+    output_video_filter_graph_ = NULL;
+    output_audio_filter_graph_ = NULL;
+    reset_flag_ = true;
+    b_init_ = false;
+    BMFLOG_NODE(BMF_WARNING, node_id_) << "output file " << output_path_ << " failed and retry";
+}
+
+bool CFFEncoder::is_retrying(){
+    int now_time = time(NULL);
+    if(now_time - last_retry_time_ >= RETRY_TIME_INTERVAL){
+        return true;
+    }
+    return false;
+}
+// add by zwl to support disconnect and retry end
 
 bool CFFEncoder::check_valid_task(Task &task) {
     for (int index = 0; index < task.get_inputs().size(); index++) {
@@ -582,11 +621,13 @@ int CFFEncoder::handle_output(AVPacket *hpkt, int idx) {
     // add by zwl end for support fill packet to out_streams
 
     ret = av_interleaved_write_frame(output_fmt_ctx_, pkt);
-    if (ret < 0)
-        BMFLOG_NODE(BMF_ERROR, node_id_) << "Interleaved write error";
-    if (!ost->encoding_needed)
+    if (ret < 0){
+        BMFLOG_NODE(BMF_ERROR, node_id_) << "output file " << output_path_ << " Interleaved write error";
+        interleaved_write_err_ = true;
+    }
+    if (!ost->encoding_needed){
         av_packet_unref(pkt);
-
+    }
     return ret;
 }
 
@@ -1543,6 +1584,8 @@ int CFFEncoder::flush() {
 
 int CFFEncoder::close() {
     int ret;
+    // add by zwl
+    is_finished_ = true;
     flush();
     clean();
     return ret;
@@ -1837,12 +1880,15 @@ int CFFEncoder::process(Task &task) {
                 BMFAVPacket av_packet = packet.get<BMFAVPacket>();
                 auto in_pkt = ffmpeg::from_bmf_av_packet(av_packet, false);
                 ost_[index].encoding_needed = false;
-                if (!enc_ctxs_[index]) {
+                if (!enc_ctxs_[index] && is_retrying()) {
                     ret = init_codec(index, NULL);
                     if (ret < 0) {
                         BMFLOG_NODE(BMF_ERROR, node_id_)
                             << "init codec error when avpacket input";
-                        return ret;
+                        // edit by zwl
+                        retry();
+                        //return ret;
+                        return PROCESS_OK;
                     }
                 }
                 if (!stream_inited_) {
@@ -1855,10 +1901,20 @@ int CFFEncoder::process(Task &task) {
                         stream_copy_cache_.erase(stream_copy_cache_.begin());
                         ret = handle_output(tmp.first, tmp.second);
                         av_packet_free(&tmp.first);
-                        if (ret < 0)
-                            return ret;
+                        if (ret < 0){
+                            // edit by zwl
+                            //return ret;
+                            retry();
+                            return PROCESS_OK;
+                        }
                     }
                     ret = handle_output(in_pkt, index);
+                    if (ret < 0){
+                        // edit by zwl
+                        //return ret;
+                        retry();
+                        return PROCESS_OK;
+                    }
                 }
                 continue;
             }
@@ -1902,33 +1958,51 @@ int CFFEncoder::process(Task &task) {
                 continue;
             }
 
-            if (!codecs_[index]) {
+            if (!codecs_[index] && is_retrying()) {
                 ret = init_codec(index, frame);
                 if (ret < 0) {
                     av_frame_free(&frame);
                     BMFLOG_NODE(BMF_ERROR, node_id_) << "init codec error";
-                    return ret;
+                    // edit by zwl 
+                    //return ret;
+                    retry();
+                    return PROCESS_OK;
                 }
             }
 
             if (adjust_pts_flag_) {
-                if (stream_inited_) {
+                if(!stream_inited_ && is_retrying()){
+                    frame_cache_.push_back(
+                        std::pair<AVFrame *, int>(frame, index));
+                }else{
                     while (frame_cache_.size()) {
                         auto temp = frame_cache_.front();
                         temp.first->pts = temp.first->pts - first_pts_;
 
                         frame_cache_.erase(frame_cache_.begin());
-                        handle_frame(temp.first, temp.second);
+                        ret = handle_frame(temp.first, temp.second);
+                        // add by zwl
+                        if(interleaved_write_err_ ){
+                            retry();
+                            return PROCESS_OK;
+                        }
                     }
                     frame->pts = frame->pts - first_pts_;
                     current_frame_pts_ = frame->pts;
-                    handle_frame(frame, index);
-                } else {
-                    frame_cache_.push_back(
-                        std::pair<AVFrame *, int>(frame, index));
+                    ret = handle_frame(frame, index);
+                    // add by zwl
+                    if(interleaved_write_err_ ){
+                        retry();
+                        return PROCESS_OK;
+                    }
                 }
-            } else {
-                handle_frame(frame, index);
+            } else if(stream_inited_){
+                ret = handle_frame(frame, index);
+                // add by zwl
+                if(interleaved_write_err_ ){
+                    retry();
+                    return PROCESS_OK;
+                }
             }
         }
     }

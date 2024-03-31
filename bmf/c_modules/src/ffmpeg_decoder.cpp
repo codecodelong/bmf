@@ -802,7 +802,7 @@ static int interrupt_callback(void *obj){
 int CFFDecoder::decode_interrupt(){
     int now =  time(NULL);
     if (now - last_read_frame_time_ >= rw_timeout_) {
-        BMFLOG(BMF_WARNING) << input_path_ <<"interrupt nowtime=" << now 
+        BMFLOG(BMF_WARNING) << input_path_ <<" interrupt nowtime=" << now 
             << ", last_read_frame_time_=" << last_read_frame_time_;
         return 1;
     }
