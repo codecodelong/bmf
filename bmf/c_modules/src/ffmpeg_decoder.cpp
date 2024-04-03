@@ -432,6 +432,12 @@ CFFDecoder::CFFDecoder(int node_id, JsonParam option) {
         if (option.has_key("loop")) {
             option.get_int("loop", loop_);
         }
+        if (option.has_key("reconnect")) {
+            option.get_int("reconnect", reconnect_);
+            if (option.has_key("reconnect_time")) {
+                option.get_int("reconnect_time", reconnect_time_);
+            }
+        }
         if (!delay_init && !init_done_) {
             init_input(opts);
         }
@@ -826,6 +832,13 @@ int CFFDecoder::init_input(AVDictionary *options) {
         if (ret < 0) {
             BMFLOG_NODE(BMF_WARNING, node_id_) << input_path_ << " avformat_open_input failed.";
             std::string msg = "avformat_open_input failed: " + error_msg(ret);
+            //zhzh
+            if (reconnect_)
+            {
+                init_done_ = false;
+                input_fmt_ctx_ = NULL;
+                return -2;
+            }
             BMF_Error(BMF_TranscodeError, msg.c_str());
         }
     } else {
@@ -843,6 +856,13 @@ int CFFDecoder::init_input(AVDictionary *options) {
         if (ret < 0) {
             BMFLOG_NODE(BMF_WARNING, node_id_) << input_path_ << " avformat_open_input failed.";
             std::string msg = "avformat_open_input failed: " + error_msg(ret);
+            //zhzh
+            if (reconnect_)
+            {
+                init_done_ = false;
+                input_fmt_ctx_ = NULL;
+                return -2;
+            }
             BMF_Error(BMF_TranscodeError, msg.c_str());
         }
     }
@@ -851,6 +871,13 @@ int CFFDecoder::init_input(AVDictionary *options) {
         if (ret < 0) {
             std::string msg =
                 "avformat_find_stream_info failed: " + error_msg(ret);
+            //zhzh
+            if (reconnect_)
+            {
+                init_done_ = false;
+                input_fmt_ctx_ = NULL;
+                return -2;
+            }
             BMF_Error(BMF_TranscodeError, msg.c_str());
         }
     }
@@ -2453,7 +2480,18 @@ int CFFDecoder::process(Task &task) {
     }
 
     if (!init_done_) {
-        init_input(dec_opts_);
+        int re = init_input(dec_opts_);
+        //zhzh
+        if (reconnect_)
+        {
+            if (re == -2)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
+            }
+            //else {
+            //    ts_offset_ = last_ts_;
+            //}
+        }
     }
 
     if (!input_fmt_ctx_) {
@@ -2520,6 +2558,19 @@ int CFFDecoder::process(Task &task) {
                 seek_to_start();
                 break;
             }
+            else if(reconnect_) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
+                init_av_codec();
+                //ts_offset_ = last_ts_;
+                Packet packet = Packet(0);
+                packet.set_timestamp(9223372036854775808);
+                assert(packet.timestamp() == 9223372036854775808);
+                if (task.get_outputs().find(1) != task.get_outputs().end())
+                    task.get_outputs()[1]->push(packet);
+                if (task.get_outputs().find(0) != task.get_outputs().end())
+                    task.get_outputs()[0]->push(packet);
+                break;
+            }
             flush(task);
             if (file_list_.size() == 0) {
                 task.set_timestamp(DONE);
@@ -2540,6 +2591,19 @@ int CFFDecoder::process(Task &task) {
             if (loop_)
             {
                 seek_to_start();
+                break;
+            }
+            else if (reconnect_) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
+                init_av_codec();
+                //ts_offset_ = last_ts_;
+                Packet packet = Packet(0);
+                packet.set_timestamp(9223372036854775808);
+                assert(packet.timestamp() == 9223372036854775808);
+                if (task.get_outputs().find(1) != task.get_outputs().end())
+                    task.get_outputs()[1]->push(packet);
+                if (task.get_outputs().find(0) != task.get_outputs().end())
+                    task.get_outputs()[0]->push(packet);
                 break;
             }
             flush(task);

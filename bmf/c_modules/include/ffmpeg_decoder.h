@@ -136,6 +136,8 @@ class CFFDecoder : public Module {
     std::function<CBytes(int64_t, CBytes)> callback_endpoint_ = nullptr;
     bool callback_decode_info_ = true;
     int loop_ = 0;
+    int reconnect_ = 0;
+    int reconnect_time_ = 5000;
     //zwl
     int rw_timeout_ = 0;
     std::string rw_timeout_str_;
