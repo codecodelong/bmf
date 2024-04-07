@@ -2553,12 +2553,12 @@ int CFFDecoder::process(Task &task) {
         }
         if (ret < 0) {
             //zhzh
-            if (loop_)
+            if (loop_ && ret == AVERROR_EOF)
             {
                 seek_to_start();
                 break;
             }
-            else if(reconnect_) {
+            if(reconnect_) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
                 init_av_codec();
                 //ts_offset_ = last_ts_;
@@ -2588,12 +2588,12 @@ int CFFDecoder::process(Task &task) {
         av_packet_unref(&pkt);
         if (ret == AVERROR_EOF || (video_end_ && audio_end_)) {
             //zhzh
-            if (loop_)
+            if (loop_ && ret == AVERROR_EOF)
             {
                 seek_to_start();
                 break;
             }
-            else if (reconnect_) {
+            if (reconnect_) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
                 init_av_codec();
                 //ts_offset_ = last_ts_;
