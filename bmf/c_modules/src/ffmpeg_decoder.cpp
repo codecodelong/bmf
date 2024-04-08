@@ -2518,7 +2518,11 @@ int CFFDecoder::process(Task &task) {
             AVRational framerate = av_guess_frame_rate(input_fmt_ctx_, video_stream_, NULL);
             info["videoInfo"]["codecType"] = avcodec_get_name(video_stream_->codecpar->codec_id);
             //info["videoInfo"]["profile"] = avcodec_profile_name(video_stream_->codecpar->codec_id, video_stream_->codecpar->profile);
-            info["videoInfo"]["frameRate"] = framerate.num;
+            int frame_rate = framerate.num;
+            if(framerate.den > 0){
+                frame_rate = framerate.num / framerate.den;
+            }
+            info["videoInfo"]["frameRate"] = frame_rate;
             info["videoInfo"]["url"] = input_path_;
             info["videoInfo"]["bitRate"] = video_decode_ctx_->bit_rate;
             info["videoInfo"]["width"] = video_stream_->codecpar->width;

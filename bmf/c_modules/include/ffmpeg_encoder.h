@@ -199,6 +199,8 @@ class CFFEncoder : public Module {
     // add by zwl to support disconnect and retry
     void retry();
     bool is_retrying();
+    //add by zwl
+    void av_info_callback();
 };
 
 /** @page ModuleEncoder Build-in Encode Module
