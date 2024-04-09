@@ -441,6 +441,7 @@ int CFFEncoder::handle_output(AVPacket *hpkt, int idx) {
     int ret;
     AVPacket *pkt = hpkt;
 
+    /*
     if (idx == 0) {
         if (callback_endpoint_ != NULL) {
             float curr_time =
@@ -453,7 +454,7 @@ int CFFEncoder::handle_output(AVPacket *hpkt, int idx) {
             auto para = CBytes::make((uint8_t *)info.c_str(), info.size());
             callback_endpoint_(0, para);
         }
-    }
+    }*/
 
     if (push_output_) {
         current_frame_pts_ = pkt->pts;
@@ -841,6 +842,7 @@ int CFFEncoder::init_stream() {
         first_pts_ = audio_first_pts_;
     }
     stream_inited_ = true;
+    av_info_callback();
     return 0;
 }
 
@@ -2040,6 +2042,52 @@ int CFFEncoder::process(Task &task) {
 void CFFEncoder::set_callback(
     std::function<CBytes(int64_t, CBytes)> callback_endpoint) {
     callback_endpoint_ = callback_endpoint;
+}
+
+// add by zwl
+void CFFEncoder::av_info_callback(){
+    if (callback_endpoint_ != NULL) {
+        nlohmann::json info;
+        AVStream *out_stream;
+        for(int idx = 0; idx < 2; idx++){
+            out_stream = output_stream_[idx];
+            if(!out_stream){
+                continue;
+            }
+            if(out_stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO){
+                info["audioInfo"]["codecType"] = avcodec_get_name(out_stream->codecpar->codec_id);
+                info["audioInfo"]["sampleRate"] = out_stream->codecpar->sample_rate;
+                info["audioInfo"]["url"] = output_path_;
+                info["audioInfo"]["bitRate"] = 0;
+                if(enc_ctxs_[idx]){
+                    info["audioInfo"]["bitRate"] = enc_ctxs_[idx]->bit_rate;
+                }
+                info["audioInfo"]["channels"] = out_stream->codecpar->channels;
+                info["audioInfo"]["profile"] = out_stream->codecpar->profile;
+                info["audioInfo"]["level"] = out_stream->codecpar->level;
+            }
+
+            if(out_stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO){
+                AVRational framerate = av_guess_frame_rate(output_fmt_ctx_, out_stream, NULL);
+                info["videoInfo"]["codecType"] = avcodec_get_name(out_stream->codecpar->codec_id);
+                int frame_rate = framerate.num;
+                if(framerate.den > 0){
+                    frame_rate = framerate.num / framerate.den;
+                }
+                info["videoInfo"]["frameRate"] = frame_rate;
+                info["videoInfo"]["url"] = output_path_;
+                info["videoInfo"]["bitRate"] = 0;
+                if(enc_ctxs_[idx]){
+                    info["videoInfo"]["bitRate"] = enc_ctxs_[idx]->bit_rate;
+                }
+                info["videoInfo"]["width"] = out_stream->codecpar->width;
+                info["videoInfo"]["height"] = out_stream->codecpar->height;
+            }
+        }
+        std::string str_info = info.dump();
+        auto para = CBytes::make((uint8_t*)str_info.c_str(), str_info.size());
+        callback_endpoint_(1, para);
+    }
 }
 
 REGISTER_MODULE_CLASS(CFFEncoder)
