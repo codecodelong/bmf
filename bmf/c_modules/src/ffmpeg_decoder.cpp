@@ -2056,6 +2056,7 @@ int CFFDecoder::init_av_codec() {
     audio_end_ = false;
     video_stream_index_ = -1;
     audio_stream_index_ = -1;
+    gop_count = 0;
     init_input(dec_opts_);
     return 0;
 }
@@ -2552,6 +2553,7 @@ int CFFDecoder::process(Task &task) {
             continue;
         }
         if (ret < 0) {
+            BMFLOG_NODE(BMF_WARNING, node_id_) << "av_read_frame ret:" << ret << " ,err:" << error_msg(ret);
             //zhzh
             if (loop_ && ret == AVERROR_EOF)
             {
@@ -2559,9 +2561,6 @@ int CFFDecoder::process(Task &task) {
                 break;
             }
             if(reconnect_) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
-                init_av_codec();
-                //ts_offset_ = last_ts_;
                 Packet packet = Packet(0);
                 packet.set_timestamp(9223372036854775808);
                 assert(packet.timestamp() == 9223372036854775808);
@@ -2569,6 +2568,9 @@ int CFFDecoder::process(Task &task) {
                     task.get_outputs()[1]->push(packet);
                 if (task.get_outputs().find(0) != task.get_outputs().end())
                     task.get_outputs()[0]->push(packet);
+                std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
+                init_av_codec();
+                //ts_offset_ = last_ts_;
                 break;
             }
             flush(task);
@@ -2578,7 +2580,6 @@ int CFFDecoder::process(Task &task) {
             }
             break;
         }
-
         if (ret >= 0 && check_valid_packet(&pkt, task)) {
             ret = decode_send_packet(task, &pkt, &got_frame);
             if (ret < 0 && ret != AVERROR(EAGAIN) && ret != AVERROR_EOF &&
@@ -2594,9 +2595,6 @@ int CFFDecoder::process(Task &task) {
                 break;
             }
             if (reconnect_) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
-                init_av_codec();
-                //ts_offset_ = last_ts_;
                 Packet packet = Packet(0);
                 packet.set_timestamp(9223372036854775808);
                 assert(packet.timestamp() == 9223372036854775808);
@@ -2604,6 +2602,9 @@ int CFFDecoder::process(Task &task) {
                     task.get_outputs()[1]->push(packet);
                 if (task.get_outputs().find(0) != task.get_outputs().end())
                     task.get_outputs()[0]->push(packet);
+                std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
+                init_av_codec();
+                //ts_offset_ = last_ts_;
                 break;
             }
             flush(task);
