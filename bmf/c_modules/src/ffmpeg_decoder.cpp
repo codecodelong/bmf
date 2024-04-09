@@ -2056,7 +2056,6 @@ int CFFDecoder::init_av_codec() {
     audio_end_ = false;
     video_stream_index_ = -1;
     audio_stream_index_ = -1;
-    gop_count = 0;
     init_input(dec_opts_);
     return 0;
 }
