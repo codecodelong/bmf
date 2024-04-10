@@ -415,7 +415,7 @@ CFFDecoder::CFFDecoder(int node_id, JsonParam option) {
     if (option.has_key("rw_timeout")) {
         option.get_int("rw_timeout", rw_timeout_);
     }else{
-        rw_timeout_ = 5;
+        rw_timeout_ = 3;
     }
     rw_timeout_str_ = std::to_string(rw_timeout_ * 1000 * 1000);
 
