@@ -2672,6 +2672,16 @@ void CFFDecoder::seek_to_start()
 // add by zwl
 #define RETRY_TIME_INTERVAL 3
 int CFFDecoder::retry(Task &task){
+    BMFLOG_NODE(BMF_INFO, node_id_)
+        << "retry";
+    Packet packet = Packet(0);
+    packet.set_timestamp(FAIL_RETRY);
+    assert(packet.timestamp() == FAIL_RETRY);
+    if (task.get_outputs().find(1) != task.get_outputs().end())
+        task.get_outputs()[1]->push(packet);
+    if (task.get_outputs().find(0) != task.get_outputs().end())
+        task.get_outputs()[0]->push(packet);
+
     int now_time = time(NULL);
     int diff_time = now_time - last_retry_time_;
     if(diff_time <= 0){
@@ -2681,14 +2691,6 @@ int CFFDecoder::retry(Task &task){
         std::this_thread::sleep_for(std::chrono::milliseconds(diff_time * 1000));
     }
     last_retry_time_ = time(NULL);
-    Packet packet = Packet(0);
-    packet.set_timestamp(FAIL_RETRY);
-    assert(packet.timestamp() == FAIL_RETRY);
-    if (task.get_outputs().find(1) != task.get_outputs().end())
-        task.get_outputs()[1]->push(packet);
-    if (task.get_outputs().find(0) != task.get_outputs().end())
-        task.get_outputs()[0]->push(packet);
-    //std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
     for(int i = 0; i < 2; i++){
         InputStream *ist = &ist_[i];
         ist->codecpar_sended = false;
