@@ -23,6 +23,7 @@ BEGIN_BMF_SDK_NS
 #endif
 enum Timestamp : int64_t {
     UNSET = -1,
+    FAIL_RETRY = 9223372036854775801,
     BMF_PAUSE = 9223372036854775802,
     DYN_EOS = 9223372036854775803, // dynamical graph updated end of stream
     BMF_EOF = 9223372036854775804,

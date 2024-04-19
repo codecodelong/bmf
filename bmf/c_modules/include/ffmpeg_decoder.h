@@ -142,6 +142,7 @@ class CFFDecoder : public Module {
     int rw_timeout_ = 0;
     std::string rw_timeout_str_;
     int last_read_frame_time_ = 0;
+    int last_retry_time_ = 0;
     
     // use when input is bmf_avpacket
     bool packets_handle_all_ = false;
@@ -209,6 +210,8 @@ class CFFDecoder : public Module {
     int extract_frames(AVFrame *frame, std::vector<AVFrame *> &output_frames);
 
     void seek_to_start();
+    // add by zwl
+    int retry(Task &task);
 
 #ifdef BMF_USE_MEDIACODEC
     int init_android_vm();

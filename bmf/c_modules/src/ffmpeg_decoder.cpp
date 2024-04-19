@@ -415,7 +415,7 @@ CFFDecoder::CFFDecoder(int node_id, JsonParam option) {
     if (option.has_key("rw_timeout")) {
         option.get_int("rw_timeout", rw_timeout_);
     }else{
-        rw_timeout_ = 3;
+        rw_timeout_ = 5;
     }
     rw_timeout_str_ = std::to_string(rw_timeout_ * 1000 * 1000);
 
@@ -836,7 +836,7 @@ int CFFDecoder::init_input(AVDictionary *options) {
             if (reconnect_)
             {
                 init_done_ = false;
-                input_fmt_ctx_ = NULL;
+                //input_fmt_ctx_ = NULL;
                 return -2;
             }
             BMF_Error(BMF_TranscodeError, msg.c_str());
@@ -860,7 +860,7 @@ int CFFDecoder::init_input(AVDictionary *options) {
             if (reconnect_)
             {
                 init_done_ = false;
-                input_fmt_ctx_ = NULL;
+                //input_fmt_ctx_ = NULL;
                 return -2;
             }
             BMF_Error(BMF_TranscodeError, msg.c_str());
@@ -875,7 +875,7 @@ int CFFDecoder::init_input(AVDictionary *options) {
             if (reconnect_)
             {
                 init_done_ = false;
-                input_fmt_ctx_ = NULL;
+                //input_fmt_ctx_ = NULL;
                 return -2;
             }
             BMF_Error(BMF_TranscodeError, msg.c_str());
@@ -1705,7 +1705,6 @@ int CFFDecoder::decode_send_packet(Task &task, AVPacket *pkt, int *got_frame) {
         if (pkt->dts == AV_NOPTS_VALUE)
             pkt->dts =
                 av_rescale_q(ist->dts, AV_TIME_BASE_Q, stream->time_base);
-
         if (!ist->codecpar_sended) {
             auto input_stream = std::make_shared<AVStream>();
             *input_stream = *stream;
@@ -2486,7 +2485,9 @@ int CFFDecoder::process(Task &task) {
         {
             if (re == -2)
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
+                //std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
+                retry(task);
+                return PROCESS_OK;
             }
             //else {
             //    ts_offset_ = last_ts_;
@@ -2516,6 +2517,7 @@ int CFFDecoder::process(Task &task) {
         if (video_stream_)
         {
             AVRational framerate = av_guess_frame_rate(input_fmt_ctx_, video_stream_, NULL);
+            info["videoInfo"]["node_id"] = node_id_;
             info["videoInfo"]["codecType"] = avcodec_get_name(video_stream_->codecpar->codec_id);
             //info["videoInfo"]["profile"] = avcodec_profile_name(video_stream_->codecpar->codec_id, video_stream_->codecpar->profile);
             int frame_rate = framerate.num;
@@ -2530,6 +2532,7 @@ int CFFDecoder::process(Task &task) {
         }
         if (audio_stream_)
         {
+            info["audioInfo"]["node_id"] = node_id_;
             info["audioInfo"]["codecType"] = avcodec_get_name(audio_stream_->codecpar->codec_id);
             info["audioInfo"]["sampleRate"] = audio_stream_->codecpar->sample_rate;
             info["audioInfo"]["url"] = input_path_;
@@ -2564,6 +2567,7 @@ int CFFDecoder::process(Task &task) {
                 break;
             }
             if(reconnect_) {
+                /*
                 Packet packet = Packet(0);
                 packet.set_timestamp(9223372036854775808);
                 assert(packet.timestamp() == 9223372036854775808);
@@ -2571,8 +2575,9 @@ int CFFDecoder::process(Task &task) {
                     task.get_outputs()[1]->push(packet);
                 if (task.get_outputs().find(0) != task.get_outputs().end())
                     task.get_outputs()[0]->push(packet);
-                std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
-                init_av_codec();
+                //std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
+                init_av_codec();*/
+                retry(task);
                 //ts_offset_ = last_ts_;
                 break;
             }
@@ -2598,6 +2603,7 @@ int CFFDecoder::process(Task &task) {
                 break;
             }
             if (reconnect_) {
+                /*
                 Packet packet = Packet(0);
                 packet.set_timestamp(9223372036854775808);
                 assert(packet.timestamp() == 9223372036854775808);
@@ -2606,7 +2612,8 @@ int CFFDecoder::process(Task &task) {
                 if (task.get_outputs().find(0) != task.get_outputs().end())
                     task.get_outputs()[0]->push(packet);
                 std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
-                init_av_codec();
+                init_av_codec();*/
+                retry(task);
                 //ts_offset_ = last_ts_;
                 break;
             }
@@ -2660,6 +2667,45 @@ void CFFDecoder::seek_to_start()
     }
     BMFLOG_NODE(BMF_INFO, node_id_) << "ts_offset_:" << ts_offset_ << ",last_ts_:" << last_ts_;
     ts_offset_ = last_ts_;
+}
+
+// add by zwl
+#define RETRY_TIME_INTERVAL 3
+int CFFDecoder::retry(Task &task){
+    int now_time = time(NULL);
+    int diff_time = now_time - last_retry_time_;
+    if(diff_time <= 0){
+        diff_time = RETRY_TIME_INTERVAL;
+    }
+    if(diff_time <= RETRY_TIME_INTERVAL){
+        std::this_thread::sleep_for(std::chrono::milliseconds(diff_time * 1000));
+    }
+    last_retry_time_ = time(NULL);
+    Packet packet = Packet(0);
+    packet.set_timestamp(FAIL_RETRY);
+    assert(packet.timestamp() == FAIL_RETRY);
+    if (task.get_outputs().find(1) != task.get_outputs().end())
+        task.get_outputs()[1]->push(packet);
+    if (task.get_outputs().find(0) != task.get_outputs().end())
+        task.get_outputs()[0]->push(packet);
+    //std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
+    for(int i = 0; i < 2; i++){
+        InputStream *ist = &ist_[i];
+        ist->codecpar_sended = false;
+    }
+    clean();
+    // AVDictionary *opts = NULL;
+    //input_fmt_ctx_ = NULL;
+    video_time_base_string_ = "";
+    video_end_ = false;
+    audio_end_ = false;
+    video_stream_index_ = -1;
+    audio_stream_index_ = -1;
+    video_stream_ = NULL;
+    audio_stream_ = NULL;
+    init_done_ = false;
+    //init_av_codec();
+    return 0;
 }
 
 REGISTER_MODULE_CLASS(CFFDecoder)

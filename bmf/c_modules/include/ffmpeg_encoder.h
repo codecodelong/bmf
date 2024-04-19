@@ -140,6 +140,7 @@ class CFFEncoder : public Module {
     int last_retry_time_ = 0;
     int is_finished_ = false;
     bool interleaved_write_err_ = false;
+    bool first_init_ = true;
 
   public:
     CFFEncoder(int node_id, JsonParam option);

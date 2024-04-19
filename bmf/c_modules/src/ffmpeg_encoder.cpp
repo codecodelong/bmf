@@ -118,7 +118,9 @@ int CFFEncoder::init() {
     b_stream_eof_[1] = false;
     b_flushed_ = false;
     b_eof_ = false;
-    ost_[0] = ost_[1] = {0};
+    if(first_init_){
+        ost_[0] = ost_[1] = {0};
+    }
     ost_[0].last_mux_dts = ost_[1].last_mux_dts = AV_NOPTS_VALUE;
     ost_[0].encoding_needed = ost_[1].encoding_needed = true;
     ost_[0].filter_in_rescale_delta_last =
@@ -127,6 +129,7 @@ int CFFEncoder::init() {
 
     //add by zwl
     interleaved_write_err_ = false;
+    first_init_ = false;
 
     /** @addtogroup EncM
      * @{
@@ -262,6 +265,8 @@ int CFFEncoder::init() {
         video_params_.erase("codec");
         if (codec == "h264") {
             codec_names_[0] = "libx264";
+        } else if (codec == "h265") {
+            codec_names_[0] = "libx265";
         } else if (codec == "bytevc1") {
             codec_names_[0] = "bytevc1";
         } else if (codec == "jpg") {
@@ -361,8 +366,9 @@ int CFFEncoder::clean() {
             avcodec_free_context(&enc_ctxs_[idx]);
             enc_ctxs_[idx] = NULL;
         }
-        if (ost_[idx].input_stream && is_finished_)
-            ost_[idx].input_stream = NULL;
+        if (ost_[idx].input_stream && is_finished_){
+            ost_[idx].input_stream = NULL;   
+        }
     }
     if (push_output_ == OutputMode::OUTPUT_NOTHING && output_fmt_ctx_ &&
         output_fmt_ctx_->oformat &&
@@ -402,7 +408,7 @@ int CFFEncoder::reset() {
 }
 
 // add by zwl to support disconnect and retry begin
-#define RETRY_TIME_INTERVAL 5
+#define RETRY_TIME_INTERVAL 3
 void CFFEncoder::retry(){
     int now_time = time(NULL);
     if(now_time - last_retry_time_ < RETRY_TIME_INTERVAL){
@@ -1015,7 +1021,6 @@ int CFFEncoder::init_codec(int idx, AVFrame *frame) {
         AVCodecParameters *par_src = avcodec_parameters_alloc();
         uint32_t codec_tag = par_dst->codec_tag;
         auto input_stream = ost_[idx].input_stream;
-
         if (!input_stream) {
             BMFLOG_NODE(BMF_ERROR, node_id_)
                 << "input stream info is needed for stream copy";
@@ -1869,8 +1874,7 @@ int CFFEncoder::process(Task &task) {
             }
 
             if (packet.is<std::shared_ptr<AVStream>>()) {
-                ost_[index].input_stream =
-                    packet.get<std::shared_ptr<AVStream>>();
+                ost_[index].input_stream = packet.get<std::shared_ptr<AVStream>>();
                 ost_[index].encoding_needed = false;
                 continue;
             }
@@ -2055,6 +2059,7 @@ void CFFEncoder::av_info_callback(){
                 continue;
             }
             if(out_stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO){
+                info["audioInfo"]["node_id"] = node_id_;
                 info["audioInfo"]["codecType"] = avcodec_get_name(out_stream->codecpar->codec_id);
                 info["audioInfo"]["sampleRate"] = out_stream->codecpar->sample_rate;
                 info["audioInfo"]["url"] = output_path_;
@@ -2068,6 +2073,7 @@ void CFFEncoder::av_info_callback(){
             }
 
             if(out_stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO){
+                info["videoInfo"]["node_id"] = node_id_;
                 AVRational framerate = av_guess_frame_rate(output_fmt_ctx_, out_stream, NULL);
                 info["videoInfo"]["codecType"] = avcodec_get_name(out_stream->codecpar->codec_id);
                 int frame_rate = framerate.num;
