@@ -133,6 +133,8 @@ class CFFDecoder : public Module {
     bool copy_ts_ = false;
 
     //zhzh
+    int deinterlace_ = 0;
+    std::string deinterlace_desc_;
     std::function<CBytes(int64_t, CBytes)> callback_endpoint_ = nullptr;
     bool callback_decode_info_ = true;
     int loop_ = 0;

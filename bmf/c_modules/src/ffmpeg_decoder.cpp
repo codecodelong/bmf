@@ -317,6 +317,16 @@ CFFDecoder::CFFDecoder(int node_id, JsonParam option) {
         if (video_params.has_key("hwaccel")) {
             video_params.get_string("hwaccel", hwaccel_str_);
         }
+        //zhzh
+        if (video_params.has_key("deinterlace"))
+        {
+            video_params.get_int("deinterlace", deinterlace_);
+            deinterlace_desc_ = "yadif";
+            if (video_params.has_key("deinterlace_desc"))
+            {
+                video_params.get_string("deinterlace_desc", deinterlace_desc_);
+            }
+        }
         if (video_params.has_key("hwaccel_check")) {
             video_params.get_int("hwaccel_check", hwaccel_check_);
         }
@@ -723,6 +733,18 @@ int CFFDecoder::init_filtergraph(int index, AVFrame *frame) {
             else
                 graph_descr = rotate_desc;
         }
+    }
+
+    //zhzh
+    if (deinterlace_ && index == 0 && frame->interlaced_frame)
+    {
+        if (graph_descr != "")
+            graph_descr += "," + deinterlace_desc_;
+        else
+            graph_descr = deinterlace_desc_;
+        BMFLOG_NODE(BMF_INFO, node_id_)
+            << "deinterlace_:" << deinterlace_
+            << " ,deinterlace_desc_:" << deinterlace_desc_ << " ,graph_descr:" << graph_descr;
     }
     if (graph_descr == "")
         return 0;
