@@ -73,6 +73,8 @@ class CFFEncoder : public Module {
     int node_id_;
     int width_;
     int height_;
+    //zhzh
+    std::string scale_method_;
     int srv_cnt_;
     int fps_;
     int64_t last_pts_;

@@ -291,6 +291,13 @@ int CFFEncoder::init() {
         video_params_.get_int("height", height_);
         video_params_.erase("width");
         video_params_.erase("height");
+        //zhzh
+        scale_method_ = "force_oar";
+        if (video_params_.has_key("scale_method"))
+        {
+            video_params_.get_string("scale_method", scale_method_);
+            video_params_.erase("scale_method");
+        }
     }
 
     if (video_params_.has_key("pix_fmt")) {
@@ -1590,7 +1597,7 @@ int CFFEncoder::flush() {
 }
 
 int CFFEncoder::close() {
-    int ret;
+    int ret = 0;
     // add by zwl
     is_finished_ = true;
     flush();
@@ -1696,10 +1703,27 @@ int CFFEncoder::handle_video_frame(AVFrame *frame, bool is_flushing,
         in_config.sample_aspect_ratio = frame->sample_aspect_ratio;
         in_cfgs[0] = in_config;
         out_cfgs[0] = out_config;
-        char args[100];
-        snprintf(args, 100, "scale=%d:%d,format=pix_fmts=%s", width_, height_,
-                 av_get_pix_fmt_name(pix_fmt_));
-        std::string args_str = args;
+        //zhzh
+        std::ostringstream oss;
+        if (scale_method_ == "force_oar") {
+            oss << "scale=" << width_ << ":" << height_ << ":force_original_aspect_ratio=decrease";
+            oss << ",pad=" << width_ << ":" << height_ << ":(ow-iw)/2:(oh-ih)/2";
+        } else if (scale_method_ == "stretch") {
+            oss << "scale=" << width_ << ":" << height_;
+        } else if (scale_method_ == "crop") {
+            //todo  scale='max(iw*target_height/ih, iw*target_width/iw)':-1, crop=target_width:target_height
+            oss << "scale='max(iw*" << height_ << "/ih," << width_ << ")':-1";
+            oss << ",crop=" << width_ << ":" << height_;// << ":0:0";
+        } else {
+            oss << "scale=" << width_ << ":" << height_ << ":force_original_aspect_ratio=decrease";
+            oss << ",pad=" << width_ << ":" << height_ << ":(ow-iw)/2:(oh-ih)/2";
+        }
+        oss << ",format=pix_fmts=" << av_get_pix_fmt_name(pix_fmt_);
+        //char args[100];
+        //snprintf(args, 100, "scale=%d:%d,format=pix_fmts=%s", width_, height_,
+        //         av_get_pix_fmt_name(pix_fmt_));
+        //std::string args_str = args;
+        std::string args_str = oss.str();
         std::string descr = "[i0_0]" + args_str + "[o0_0]";
 
         if (frame->hw_frames_ctx) {
