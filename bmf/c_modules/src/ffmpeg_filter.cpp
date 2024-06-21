@@ -33,6 +33,7 @@ CFFFilter::CFFFilter(int node_id, JsonParam option) {
 
     option_ = option;
     // avfilter_register_all();
+    BMFLOG_NODE(BMF_INFO, node_id_) << "option:" << option_.dump();
 }
 
 CFFFilter::~CFFFilter() { clean(); }
@@ -611,6 +612,41 @@ int CFFFilter::reset() {
     all_output_eof_ = false;
     b_graph_inited_ = false;
     clean();
+    return 0;
+}
+
+int32_t CFFFilter::dynamic_reset(JsonParam opt_reset)
+{
+    BMFLOG_NODE(BMF_INFO, node_id_) << "dynamic_reset before opt_reset:" << opt_reset.dump() << std::endl << "option_:" << option_.dump();
+    std::string name;
+    std::string para;
+    if (opt_reset.has_key("name"))
+    {
+        opt_reset.get_string("name", name);
+    }
+    if (opt_reset.has_key("para"))
+    {
+        opt_reset.get_string("para", para);
+    }
+    if (!name.empty())
+    {
+        std::string s = option_.dump();
+        nlohmann::json json_value = nlohmann::json::parse(s);
+        if (json_value.contains("filters"))
+        {
+            for ( size_t i = 0; i < json_value["filters"].size(); i++)
+            {
+                if (json_value["filters"][i]["name"] == name && !para.empty())
+                {
+                    json_value["filters"][i]["para"] = para;
+                    break;
+                }
+            }
+        }
+        option_ = JsonParam(json_value);
+        BMFLOG_NODE(BMF_INFO, node_id_) << "dynamic_reset after option_:" << option_.dump();
+        reset();
+    }
     return 0;
 }
 

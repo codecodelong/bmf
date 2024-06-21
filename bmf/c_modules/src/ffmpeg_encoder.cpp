@@ -344,6 +344,81 @@ int CFFEncoder::init() {
         }
     }
 
+    if (input_option_.has_key("filter"))
+    {
+        input_option_.get_object("filter", filter_params_);
+    }
+    if (check_watermarks_valid())
+    {
+        update_watermarks_ = 1;
+    }
+    return 0;
+}
+
+bool CFFEncoder::check_watermarks_valid()
+{
+    if (filter_params_.has_key("watermarks"))
+    {
+        std::vector<JsonParam> watermarks;
+        filter_params_.get_object_list("watermarks", watermarks);
+        std::vector<JsonParam>::iterator it = watermarks.begin();
+        while (it != watermarks.end())
+        {
+            JsonParam watermark = *it;
+            if (!watermark_valid(watermark))
+            {
+                it = watermarks.erase(it);
+            }
+            else {
+                it++;
+            }
+        }
+        if (!watermarks.empty())
+        {
+            watermarks_ = watermarks;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool CFFEncoder::watermark_valid(JsonParam& watermark)
+{
+    if (watermark.has_key("type")) {
+        std::string type;
+        watermark.get_string("type", type);
+        if (type == "image" && watermark.has_key("path"))
+        {
+            std::string path;
+            watermark.get_string("path", path);
+            if (std::filesystem::exists(path))
+            {
+                return true;
+            }
+        }
+        else if (type == "drawtext" && watermark.has_key("fontfile"))
+        {
+            std::string fontfile;
+            watermark.get_string("fontfile", fontfile);
+            if (std::filesystem::exists(fontfile))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+int32_t CFFEncoder::dynamic_reset(JsonParam opt_reset)
+{
+    if (opt_reset.has_key("filter"))
+    {
+        opt_reset.get_object("filter", filter_params_);
+    }
+    if (check_watermarks_valid())
+    {
+        update_watermarks_ = 1;
+    }
     return 0;
 }
 
@@ -414,9 +489,20 @@ int CFFEncoder::reset() {
     return 0;
 }
 
+int CFFEncoder::clean_cache()
+{
+    while (stream_copy_cache_.size()) {
+        auto tmp = stream_copy_cache_.front();
+        stream_copy_cache_.erase(stream_copy_cache_.begin());
+        av_packet_free(&tmp.first);
+    }
+    return 0;
+}
+
 // add by zwl to support disconnect and retry begin
 #define RETRY_TIME_INTERVAL 3
 void CFFEncoder::retry(){
+    clean_cache();
     int now_time = time(NULL);
     if(now_time - last_retry_time_ < RETRY_TIME_INTERVAL){
         return;
@@ -750,6 +836,7 @@ int CFFEncoder::encode_and_write(AVFrame *frame, unsigned int idx,
             av_packet_free(&enc_pkt);
             return *got_packet;
         }
+
         if (push_output_ == OutputMode::OUTPUT_UNMUX_PACKET) {
             if (first_packet_[idx]) {
                 auto stream = std::make_shared<AVStream>();
@@ -784,6 +871,7 @@ int CFFEncoder::encode_and_write(AVFrame *frame, unsigned int idx,
             }
             if (ret = flush_cache(); ret < 0)
                 return ret;
+
             ret = handle_output(enc_pkt, idx);
             if (ret != 0) {
                 av_packet_free(&enc_pkt);
@@ -952,8 +1040,9 @@ int CFFEncoder::init_codec(int idx, AVFrame *frame) {
 
     if (!frame && ost_[idx].encoding_needed) {
         ret = 0;
-        if (codec_init_touched_num_ == num_input_streams_)
+        if (codec_init_touched_num_ == num_input_streams_) {
             ret = init_stream();
+        }
         return ret;
     }
 
@@ -1006,6 +1095,16 @@ int CFFEncoder::init_codec(int idx, AVFrame *frame) {
                     << "Failed to create hwdevice context";
             }
         }
+        //zhzh
+        if (codec_names_[idx] == "h264_qsv" ||
+            codec_names_[idx] == "hevc_qsv") {
+            int err = av_hwdevice_ctx_create(&device_ref, AV_HWDEVICE_TYPE_QSV,
+                nullptr, nullptr, 1);
+            if (err < 0) {
+                BMFLOG_NODE(BMF_ERROR, node_id_)
+                    << "Failed to create hwdevice context";
+            }
+        }
     }
     enc_ctxs_[idx] = avcodec_alloc_context3(codecs_[idx]);
     if (!enc_ctxs_[idx]) {
@@ -1028,6 +1127,7 @@ int CFFEncoder::init_codec(int idx, AVFrame *frame) {
         AVCodecParameters *par_src = avcodec_parameters_alloc();
         uint32_t codec_tag = par_dst->codec_tag;
         auto input_stream = ost_[idx].input_stream;
+
         if (!input_stream) {
             BMFLOG_NODE(BMF_ERROR, node_id_)
                 << "input stream info is needed for stream copy";
@@ -1482,7 +1582,7 @@ int CFFEncoder::init_codec(int idx, AVFrame *frame) {
     }
     ret = avcodec_open2(enc_ctxs_[idx], codecs_[idx], &enc_opts);
     if (ret < 0) {
-        BMFLOG_NODE(BMF_ERROR, node_id_) << "avcodec_open2 result: " << ret;
+        BMFLOG_NODE(BMF_ERROR, node_id_) << "avcodec_open2 result: " << ret << " ,err:" << error_msg(ret);
         BMFLOG_NODE(BMF_ERROR, node_id_)
             << "Cannot open video/audio encoder for stream #" << idx;
         return ret;
@@ -1689,10 +1789,29 @@ int CFFEncoder::handle_video_frame(AVFrame *frame, bool is_flushing,
     std::vector<AVFrame *> filter_frames;
     std::vector<AVFrame *> sync_frames;
 
-    if (output_video_filter_graph_ == NULL &&
-        need_output_video_filter_graph(frame)) {
+    bool update_scale = false;
+    if (in_width_ == 0 && in_height_ == 0 && frame) {
+        in_width_ = frame->width;
+        in_height_ = frame->height;
+    }
+    if (in_width_ != 0 && in_height_ != 0 && (in_width_ != frame->width || in_height_ != frame->height)) {
+        in_width_ = frame->width;
+        in_height_ = frame->height;
+        update_scale = true;
+        update_watermarks_ = 1;
+    }
+    if (frame->format != pix_fmt_) {
+        update_scale = true;
+        update_watermarks_ = 1;
+    }
+
+    if ((output_video_filter_graph_ == NULL && need_output_video_filter_graph(frame)) || update_scale || update_watermarks_) {
         std::map<int, FilterConfig> in_cfgs;
         std::map<int, FilterConfig> out_cfgs;
+        if (output_video_filter_graph_)
+        {
+            output_video_filter_graph_.reset();
+        }
         output_video_filter_graph_ = std::make_shared<FilterGraph>();
         FilterConfig in_config;
         FilterConfig out_config;
@@ -1705,18 +1824,84 @@ int CFFEncoder::handle_video_frame(AVFrame *frame, bool is_flushing,
         out_cfgs[0] = out_config;
         //zhzh
         std::ostringstream oss;
-        if (scale_method_ == "force_oar") {
-            oss << "scale=" << width_ << ":" << height_ << ":force_original_aspect_ratio=decrease";
-            oss << ",pad=" << width_ << ":" << height_ << ":(ow-iw)/2:(oh-ih)/2";
-        } else if (scale_method_ == "stretch") {
-            oss << "scale=" << width_ << ":" << height_;
-        } else if (scale_method_ == "crop") {
-            //todo  scale='max(iw*target_height/ih, iw*target_width/iw)':-1, crop=target_width:target_height
-            oss << "scale='max(iw*" << height_ << "/ih," << width_ << ")':-1";
-            oss << ",crop=" << width_ << ":" << height_;// << ":0:0";
-        } else {
-            oss << "scale=" << width_ << ":" << height_ << ":force_original_aspect_ratio=decrease";
-            oss << ",pad=" << width_ << ":" << height_ << ":(ow-iw)/2:(oh-ih)/2";
+        if (need_output_video_filter_graph(frame))
+        {
+            if (scale_method_ == "force_oar") {
+                oss << "scale=" << width_ << ":" << height_ << ":force_original_aspect_ratio=decrease";
+                oss << ",pad=" << width_ << ":" << height_ << ":(ow-iw)/2:(oh-ih)/2";
+            }
+            else if (scale_method_ == "stretch") {
+                oss << "scale=" << width_ << ":" << height_;
+            }
+            else if (scale_method_ == "crop") {
+                //todo  scale='max(iw*target_height/ih, iw*target_width/iw)':-1, crop=target_width:target_height
+                oss << "scale='max(iw*" << height_ << "/ih," << width_ << ")':-1";
+                oss << ",crop=" << width_ << ":" << height_;// << ":0:0";
+            }
+            else {
+                oss << "scale=" << width_ << ":" << height_ << ":force_original_aspect_ratio=decrease";
+                oss << ",pad=" << width_ << ":" << height_ << ":(ow-iw)/2:(oh-ih)/2";
+            }
+        }
+        if (update_watermarks_)
+        {
+            update_watermarks_ = 0;
+            std::string input = "[i0_0]";
+            std::vector<JsonParam>::iterator it = watermarks_.begin();
+            int i = 1;
+            while (it != watermarks_.end())
+            {
+                auto watermark = *it;
+                std::string type;
+                watermark.get_string("type", type);
+                if (type == "image")
+                {
+                    std::string path;
+                    std::string x;
+                    std::string y;
+                    std::string width;
+                    std::string height;
+                    std::string alpha;
+                    watermark.get_string("path", path);
+                    watermark.get_string("x", x);
+                    watermark.get_string("y", y);
+                    watermark.get_string("width", width);
+                    watermark.get_string("height", height);
+                    watermark.get_string("alpha", alpha);
+                    if (!oss.str().empty())
+                    {
+                        input = "[o" + std::to_string(i) + "_0]";
+                        oss << input << ",";
+                    }
+                    oss << "movie=filename=" << path
+                        << ",scale=w=" << width << ":h=" << height << "[watermark_" << i << "]"
+                        << "," << input << "[watermark_" << i << "]overlay=x=" << x << ":y=" << y;
+                }
+                else if (type == "drawtext") {
+                    std::string fontfile;
+                    std::string text;
+                    std::string fontcolor;
+                    std::string fontsize;
+                    std::string x;
+                    std::string y;
+                    watermark.get_string("fontfile", fontfile);
+                    watermark.get_string("text", text);
+                    watermark.get_string("fontcolor", fontcolor);
+                    watermark.get_string("fontsize", fontsize);
+                    watermark.get_string("x", x);
+                    watermark.get_string("y", y);
+                    if (!oss.str().empty()) {
+                        oss << ",";
+                    }
+                    oss << "drawtext=fontfile=" << fontfile
+                        << ":text='" << text << "'"
+                        << ":fontsize=" << fontsize
+                        << ":fontcolor=" << fontcolor
+                        << ":x=" << x << ":y=" << y;
+                }
+                it++;
+                i++;
+            }
         }
         oss << ",format=pix_fmts=" << av_get_pix_fmt_name(pix_fmt_);
         //char args[100];
@@ -1725,6 +1910,13 @@ int CFFEncoder::handle_video_frame(AVFrame *frame, bool is_flushing,
         //std::string args_str = args;
         std::string args_str = oss.str();
         std::string descr = "[i0_0]" + args_str + "[o0_0]";
+        if (need_output_video_filter_graph(frame))
+        {
+            descr = "[i0_0]" + args_str + "[o0_0]";
+        }
+        else {
+            descr = args_str + "[o0_0]";
+        }
 
         if (frame->hw_frames_ctx) {
             output_video_filter_graph_->hw_frames_ctx_map_[0] =
@@ -1898,7 +2090,8 @@ int CFFEncoder::process(Task &task) {
             }
 
             if (packet.is<std::shared_ptr<AVStream>>()) {
-                ost_[index].input_stream = packet.get<std::shared_ptr<AVStream>>();
+                ost_[index].input_stream =
+                    packet.get<std::shared_ptr<AVStream>>();
                 ost_[index].encoding_needed = false;
                 continue;
             }

@@ -210,7 +210,7 @@ class CFFDecoder : public Module {
     int process_task_output_packet(int index, Packet &packet);
     int64_t get_start_time();
     int extract_frames(AVFrame *frame, std::vector<AVFrame *> &output_frames);
-
+    //zhzh
     void seek_to_start();
     // add by zwl
     int retry(Task &task);
@@ -255,6 +255,7 @@ class CFFDecoder : public Module {
 
     //zhzh
     void set_callback(std::function<CBytes(int64_t, CBytes)> callback_endpoint) override;
+    int32_t dynamic_reset(JsonParam opt_reset) override;
     //zwl
     int decode_interrupt();
 };

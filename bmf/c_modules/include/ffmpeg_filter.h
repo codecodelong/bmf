@@ -78,6 +78,9 @@ class CFFFilter : public Module {
     bmf_sdk::Packet convert_avframe_to_packet(AVFrame *frame, int index);
     bool check_finished();
     int get_cache_frame(int index, AVFrame *&frame, int &choose_index);
+
+    //zhzh
+    virtual int32_t dynamic_reset(JsonParam opt_reset) override;
 };
 
 /** @page ModuleFilter Build-in Filter Module

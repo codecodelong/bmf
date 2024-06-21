@@ -439,6 +439,7 @@ CFFDecoder::CFFDecoder(int node_id, JsonParam option) {
         if (option.has_key("delay_init_input")) {
             option.get_int("delay_init_input", delay_init);
         }
+        //zhzh
         if (option.has_key("loop")) {
             option.get_int("loop", loop_);
         }
@@ -670,6 +671,11 @@ int CFFDecoder::codec_context(int *stream_idx, AVCodecContext **dec_ctx,
                                            AV_HWDEVICE_TYPE_CUDA, NULL, NULL,
                                            1);
             }
+        }
+        //zhzh
+        if (hwaccel_str_ == "qsv" && type == AVMEDIA_TYPE_VIDEO) {
+            av_hwdevice_ctx_create(&((*dec_ctx)->hw_device_ctx),
+                AV_HWDEVICE_TYPE_QSV, NULL, NULL, 1);
         }
 #ifdef BMF_USE_MEDIACODEC
         if (hwaccel_str_ == "mediacodec" && type == AVMEDIA_TYPE_VIDEO) {
@@ -970,6 +976,7 @@ int CFFDecoder::init_input(AVDictionary *options) {
         BMF_Error(BMF_TranscodeError,
                   "Could not find audio or video stream in the input");
     }
+
     return 0;
 }
 
@@ -1189,6 +1196,12 @@ int CFFDecoder::extract_frames(AVFrame *frame,
 
         if (extract_frames_device_ == "mediacodec") {
             enum AVPixelFormat output_pix_fmt = AV_PIX_FMT_MEDIACODEC;
+            hwaccel_retrieve_data(output_frames[i], output_pix_fmt);
+        }
+
+        //zhzh
+        if (extract_frames_device_ == "qsv") {
+            enum AVPixelFormat output_pix_fmt = AV_PIX_FMT_QSV;
             hwaccel_retrieve_data(output_frames[i], output_pix_fmt);
         }
     }
@@ -1727,6 +1740,7 @@ int CFFDecoder::decode_send_packet(Task &task, AVPacket *pkt, int *got_frame) {
         if (pkt->dts == AV_NOPTS_VALUE)
             pkt->dts =
                 av_rescale_q(ist->dts, AV_TIME_BASE_Q, stream->time_base);
+
         if (!ist->codecpar_sended) {
             auto input_stream = std::make_shared<AVStream>();
             *input_stream = *stream;
@@ -2165,8 +2179,8 @@ int CFFDecoder::start_decode(std::vector<int> input_index,
         av_init_packet(&pkt);
         // add by zwl
         last_read_frame_time_ = time(NULL);
-
         ret = av_read_frame(input_fmt_ctx_, &pkt);
+
         if (ret < 0) {
             flush(task_);
             if (file_list_.size() == 0) {
@@ -2511,9 +2525,6 @@ int CFFDecoder::process(Task &task) {
                 retry(task);
                 return PROCESS_OK;
             }
-            //else {
-            //    ts_offset_ = last_ts_;
-            //}
         }
     }
 
@@ -2600,7 +2611,6 @@ int CFFDecoder::process(Task &task) {
                 //std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
                 init_av_codec();*/
                 retry(task);
-                //ts_offset_ = last_ts_;
                 break;
             }
             flush(task);
@@ -2610,6 +2620,7 @@ int CFFDecoder::process(Task &task) {
             }
             break;
         }
+
         if (ret >= 0 && check_valid_packet(&pkt, task)) {
             ret = decode_send_packet(task, &pkt, &got_frame);
             if (ret < 0 && ret != AVERROR(EAGAIN) && ret != AVERROR_EOF &&
@@ -2636,7 +2647,6 @@ int CFFDecoder::process(Task &task) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(reconnect_time_));
                 init_av_codec();*/
                 retry(task);
-                //ts_offset_ = last_ts_;
                 break;
             }
             flush(task);
@@ -2659,6 +2669,30 @@ int CFFDecoder::process(Task &task) {
 void CFFDecoder::set_callback(std::function<CBytes(int64_t, CBytes)> callback_endpoint)
 {
     callback_endpoint_ = callback_endpoint;
+}
+
+int32_t CFFDecoder::dynamic_reset(JsonParam opt_reset)
+{
+    BMFLOG_NODE(BMF_INFO, node_id_) << "dynamic_reset:" << opt_reset.dump();
+    if (opt_reset.has_key("input_path")) {
+        opt_reset.get_string("input_path", input_path_);
+        int delay_init = 0;
+        if (opt_reset.has_key("delay_init_input")) {
+            opt_reset.get_int("delay_init_input", delay_init);
+        }
+        if (opt_reset.has_key("loop")) {
+            opt_reset.get_int("loop", loop_);
+        }
+        if (opt_reset.has_key("reconnect")) {
+            opt_reset.get_int("reconnect", reconnect_);
+            if (opt_reset.has_key("reconnect_time")) {
+                opt_reset.get_int("reconnect_time", reconnect_time_);
+            }
+        }
+        init_av_codec();
+        ts_offset_ += last_ts_;
+    }
+    return 0;
 }
 
 void CFFDecoder::seek_to_start()

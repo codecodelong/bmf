@@ -68,6 +68,12 @@ class CFFEncoder : public Module {
     JsonParam mux_params_;
     JsonParam audio_params_;
     JsonParam metadata_params_;
+    //zhzh
+    JsonParam filter_params_;
+    std::vector<JsonParam> watermarks_;
+    int update_watermarks_ = 0;
+    int in_width_ = 0;
+    int in_height_ = 0;
     AVFormatContext *output_fmt_ctx_;
     AVFrame *decoded_frm_;
     int node_id_;
@@ -196,10 +202,15 @@ class CFFEncoder : public Module {
                          std::vector<AVFrame *> &frames);
 
     bool need_output_video_filter_graph(AVFrame *frame);
+    //zhzh
+    bool check_watermarks_valid();
+    bool watermark_valid(JsonParam& watermark);
+    int32_t dynamic_reset(JsonParam opt_reset) override;
 
     int streamcopy(AVPacket *ipkt, AVPacket *opkt, int idx);
 
     // add by zwl to support disconnect and retry
+    int clean_cache();
     void retry();
     bool is_retrying();
     //add by zwl

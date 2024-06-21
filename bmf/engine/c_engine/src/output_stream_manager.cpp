@@ -57,7 +57,12 @@ OutputStreamManager::OutputStreamManager(
 int OutputStreamManager::post_process(Task &task) {
     for (auto &t : task.outputs_queue_) {
         auto q = std::make_shared<SafeQueue<Packet>>(t.second);
-        output_streams_[t.first]->propagate_packets(q);
+        //zhzh
+        std::map<int, std::shared_ptr<OutputStream>>::iterator it = output_streams_.find(t.first);
+        if (it != output_streams_.end() && it->second)
+        {
+            it->second->propagate_packets(q);
+        }
     }
     return 0;
 }
@@ -73,7 +78,12 @@ bool OutputStreamManager::get_stream(
 
 int OutputStreamManager::propagate_packets(
     int stream_id, std::shared_ptr<SafeQueue<Packet>> packets) {
-    output_streams_[stream_id]->propagate_packets(packets);
+    //zhzh
+    std::map<int, std::shared_ptr<OutputStream>>::iterator it = output_streams_.find(stream_id);
+    if (it != output_streams_.end() && it->second)
+    {
+        it->second->propagate_packets(packets);
+    }
     return 0;
 }
 
@@ -145,9 +155,14 @@ void OutputStreamManager::remove_stream(int stream_id, int mirror_id) {
 }
 
 void OutputStreamManager::wait_on_stream_empty(int stream_id) {
-    for (auto mirror_stream : output_streams_[stream_id]->mirror_streams_)
-        mirror_stream.input_stream_manager_->wait_on_stream_empty(
-            mirror_stream.stream_id_);
+    //zhzh
+    std::map<int, std::shared_ptr<OutputStream>>::iterator it = output_streams_.find(stream_id);
+    if (it != output_streams_.end() && it->second)
+    {
+        for (auto mirror_stream : it->second->mirror_streams_)
+            mirror_stream.input_stream_manager_->wait_on_stream_empty(
+                mirror_stream.stream_id_);
+    }
 }
 
 void OutputStreamManager::probe_eof() {
